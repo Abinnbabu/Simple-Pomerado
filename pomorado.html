@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Pomodoro with Tasks + Draggable, Collapsible Mini + Mini Window</title>
+<style>
+  :root{
+    --bg:#071024; --card:#0b1220; --accent:#f97316; --muted:#94a3b8; --glass: rgba(255,255,255,0.03);
+    --success:#16a34a;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;background:linear-gradient(180deg,#031021,#07121a);color:#e6eef8;}
+  .app{display:grid;grid-template-columns:300px 1fr;gap:18px;padding:20px;min-height:100vh;box-sizing:border-box}
+  @media(max-width:900px){ .app{grid-template-columns:1fr; padding:12px} .sidebar{order:2} .main{order:1} }
+
+  /* SIDEBAR (tasks) */
+  .sidebar{background:linear-gradient(180deg,var(--card),#07121a);border-radius:12px;padding:14px;box-shadow:0 8px 30px rgba(2,6,23,0.6);}
+  .sidebar h2{margin:0 0 12px 0;font-size:18px}
+  .task-list{max-height:56vh;overflow:auto;padding-right:6px}
+  .task-item{display:flex;align-items:center;justify-content:space-between;padding:8px;border-radius:8px;cursor:pointer;margin-bottom:8px;background:rgba(255,255,255,0.01)}
+  .task-item.selected{background:linear-gradient(90deg,var(--accent),#ffb86b);color:#071021}
+  .task-item small{display:block;color:var(--muted);font-size:12px}
+  .task-controls{display:flex;gap:6px;align-items:center}
+  .btn{padding:6px 8px;border-radius:8px;border:0;cursor:pointer;background:rgba(255,255,255,0.03);color:inherit}
+  .btn.ghost{background:transparent;border:1px solid rgba(160,170,190,0.06)}
+  .add-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:10px}
+  input[type="text"], input[type="number"]{width:100%;padding:8px;border-radius:8px;border:0;background:rgba(0,0,0,0.22);color:#e9f6ff}
+  .progress{height:8px;background:rgba(255,255,255,0.04);border-radius:8px;margin-top:6px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#ffb86b);width:0%}
+
+  /* MAIN */
+  .main{background:linear-gradient(180deg,var(--card),#07121a);border-radius:12px;padding:18px;box-shadow:0 8px 30px rgba(2,6,23,0.6)}
+  h1{margin:0 0 12px 0;font-size:20px}
+  .layout{display:grid;grid-template-columns:1fr 360px;gap:16px}
+  @media(max-width:1100px){ .layout{grid-template-columns:1fr} }
+  .card{background:transparent}
+  .timer-card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px}
+  .time{font-size:64px;font-weight:700}
+  .mode{display:flex;gap:8px;align-items:center}
+  .mode button{background:var(--glass);border:0;padding:8px 12px;border-radius:8px;color:var(--muted);cursor:pointer}
+  .mode button.active{background:linear-gradient(90deg,var(--accent),#ffb86b);color:#081020}
+  .controls{display:flex;gap:8px;justify-content:center;margin-top:8px}
+  .controls button{padding:10px 14px;border-radius:10px;border:0;cursor:pointer;background:#0b1622;color:#dff0ff}
+  .controls button.secondary{background:transparent;border:1px solid rgba(160,170,190,0.08);color:var(--muted)}
+  .small{font-size:13px;color:var(--muted);text-align:center;margin-top:8px}
+  .settings{margin-top:12px;padding:12px;background:rgba(255,255,255,0.02);border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .task-detail{background:rgba(255,255,255,0.02);padding:12px;border-radius:10px}
+  .subtasks{margin-top:8px}
+  .subtask{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:rgba(0,0,0,0.12);margin-bottom:6px}
+  .subtask.done{opacity:0.6;text-decoration:line-through}
+  .footer{display:flex;justify-content:space-between;align-items:center;margin-top:12px;color:var(--muted);font-size:13px}
+  .tiny{font-size:12px;color:var(--muted)}
+
+  /* MINI PLAYER (in-page) */
+  .mini-player{
+    position:fixed; right:18px; bottom:18px; width:260px; max-width:90vw;
+    background:linear-gradient(180deg, rgba(11,18,32,0.95), rgba(6,10,18,0.95));
+    border-radius:12px; padding:10px; box-shadow:0 10px 30px rgba(2,6,23,0.6); z-index:9999;
+    display:flex; gap:8px; align-items:center; user-select:none; transition:transform .12s ease, box-shadow .12s;
+  }
+  .mini-player.collapsed{ width:64px; height:64px; padding:8px; overflow:hidden; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+  .mini-player:hover{ transform:translateY(-4px); box-shadow:0 18px 40px rgba(2,6,23,0.7); }
+  .mini-left{flex:1; display:flex; flex-direction:column; gap:4px;}
+  .mini-mode{font-size:12px; color:var(--muted);}
+  .mini-time{font-weight:700; font-size:20px;}
+  .mini-task{font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mini-controls{display:flex; gap:6px; align-items:center;}
+  .mini-controls button{background:transparent; border:0; color:#dff0ff; padding:6px; border-radius:8px; cursor:pointer}
+  .mini-play{background:linear-gradient(90deg,var(--accent),#ffb86b); color:#071021; padding:6px 8px; font-weight:700}
+  .mini-toggle{position:absolute; left:6px; top:6px; background:transparent; border:0; color:var(--muted); cursor:pointer}
+  .mini-collapse-icon{font-size:18px}
+
+  /* progress ring */
+  .ring { width:56px; height:56px; display:flex; align-items:center; justify-content:center; position:relative; }
+  .ring svg { transform:rotate(-90deg); }
+  .ring .center { position:absolute; font-size:12px; text-align:center; color:var(--muted); }
+
+  /* make mini-player draggable touch-friendly */
+  .drag-handle{ cursor:grab; -webkit-user-select:none; -webkit-touch-callout:none; }
+
+  .pulse-highlight{ outline: 3px solid rgba(249,115,22,0.15); box-shadow: 0 0 0 4px rgba(249,115,22,0.06) inset; transition: outline 220ms ease; }
+
+  .mini-window-warning{ font-size:12px; color:var(--muted); margin-top:8px; }
+</style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="Pomodoro application with tasks">
+    <aside class="sidebar" id="sidebar">
+      <h2>Tasks</h2>
+
+      <div class="add-form" id="addTaskForm">
+        <input id="newTaskTitle" type="text" placeholder="New task title">
+        <button class="btn" id="addTaskBtn">Add</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:10px">
+        <input id="newTaskPom" type="number" min="1" value="1" title="Target pomodoros" />
+        <div class="tiny" style="align-self:center;color:var(--muted)">target</div>
+      </div>
+
+      <div class="task-list" id="taskList" aria-live="polite"></div>
+
+      <div style="margin-top:10px">
+        <button class="btn ghost" id="clearCompleted">Clear Completed</button>
+        <button class="btn ghost" id="exportTasks">Export</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="layout">
+        <section class="card timer-card">
+          <h1>Pomodoro Timer</h1>
+
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <div class="mode" role="tablist" aria-label="Mode">
+              <button id="workMode" class="active" data-mode="work">Work</button>
+              <button id="shortMode" data-mode="short">Short Break</button>
+              <button id="longMode" data-mode="long">Long Break</button>
+            </div>
+            <div style="margin-left:auto; display:flex; gap:8px">
+              <button class="btn ghost" id="openMiniWindowBtn" title="Open mini player in separate window">Open Mini Window</button>
+              <button class="btn ghost" id="closeMiniWindowBtn" title="Close mini window" style="display:none">Close Mini Window</button>
+            </div>
+          </div>
+
+          <div class="time" id="timeDisplay" aria-live="polite">25:00</div>
+
+          <div class="controls" role="group" aria-label="Controls">
+            <button id="startBtn">Start</button>
+            <button id="pauseBtn" class="secondary" disabled>Pause</button>
+            <button id="resetBtn" class="secondary">Reset</button>
+          </div>
+
+          <div class="small" id="status">Ready — Focus for 25 minutes</div>
+
+          <div class="settings" aria-hidden="false">
+            <div>
+              <label for="workInput">Work (minutes)</label>
+              <input id="workInput" type="number" min="1" max="180" value="25">
+            </div>
+            <div>
+              <label for="shortInput">Short Break (minutes)</label>
+              <input id="shortInput" type="number" min="1" max="60" value="5">
+            </div>
+            <div>
+              <label for="longInput">Long Break (minutes)</label>
+              <input id="longInput" type="number" min="1" max="60" value="15">
+            </div>
+            <div>
+              <label for="cyclesInput">Cycles before long break</label>
+              <input id="cyclesInput" type="number" min="1" max="10" value="4">
+            </div>
+          </div>
+
+          <div class="footer">
+            <div class="tiny" id="selectedTaskLabel">No task selected</div>
+            <div class="tiny">Built for browser</div>
+          </div>
+        </section>
+
+        <aside class="card task-detail" id="taskDetail">
+          <h3 id="taskTitle">Select a task</h3>
+          <div id="taskProgressWrap" style="display:none">
+            <div class="tiny" id="taskCounts"></div>
+            <div class="progress"><i id="taskProgress"></i></div>
+          </div>
+
+          <div style="margin-top:10px">
+            <label for="taskNotes" class="tiny">Notes</label>
+            <input id="taskNotes" type="text" placeholder="Optional notes">
+          </div>
+
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <input id="addSubTitle" type="text" placeholder="New subtask">
+            <button class="btn" id="addSubBtn">Add</button>
+          </div>
+
+          <div class="subtasks" id="subtaskList"></div>
+
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <button class="btn" id="assignPomBtn">Assign last pomodoro manually</button>
+            <button class="btn ghost" id="markDoneBtn">Mark Task Done</button>
+          </div>
+
+          <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+            <div class="tiny" id="taskMeta"></div>
+            <div>
+              <button class="btn ghost" id="deleteTaskBtn">Delete Task</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- MINI PLAYER (in-page) -->
+  <div class="mini-player drag-handle" id="miniPlayer" title="Drag me — click collapse icon to shrink">
+    <button class="mini-toggle" id="miniToggle" title="Collapse/Expand">—</button>
+
+    <div class="ring" id="miniRing" style="width:56px;height:56px">
+      <svg width="56" height="56" viewBox="0 0 56 56">
+        <circle cx="28" cy="28" r="24" stroke="rgba(255,255,255,0.08)" stroke-width="4" fill="none"></circle>
+        <circle cx="28" cy="28" r="24" stroke="url(#g1)" stroke-width="4" fill="none" stroke-linecap="round" id="progressCircle"
+          stroke-dasharray="150.72" stroke-dashoffset="0"></circle>
+        <defs>
+          <linearGradient id="g1" x1="0" x2="1">
+            <stop offset="0" stop-color="#f97316"/>
+            <stop offset="1" stop-color="#ffb86b"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="center" id="miniCenter"></div>
+    </div>
+
+    <div class="mini-left" id="miniLeft">
+      <div class="mini-mode" id="miniMode">Work</div>
+      <div class="mini-time" id="miniTime">25:00</div>
+      <div class="mini-task" id="miniTask">No task selected</div>
+    </div>
+
+    <div class="mini-controls" id="miniControls">
+      <button id="miniPrev" title="Reset current mode">⟲</button>
+      <button id="miniPlay" class="mini-play" title="Start">Start</button>
+      <button id="miniPause" title="Pause" disabled>⏸</button>
+    </div>
+  </div>
+
+<script>
+/* ---- FULL APP + Draggable/Collapsible Mini + Mini Window Sync ----
+   Features:
+   - Draggable mini-player in-page (touch and mouse)
+   - Collapsible to tiny icon (miniToggle)
+   - Progress ring animated by remaining time
+   - Open/Close a separate mini-window (popup) that stays visible across tabs/windows; uses BroadcastChannel to sync
+   - Fallback to localStorage event when BroadcastChannel not available
+*/
+
+/* STORAGE KEYS */
+const SETTINGS_KEY = 'pomodoro_settings_v1';
+const TASKS_KEY = 'pomodoro_tasks_v1';
+const BROADCAST_KEY = 'pomodoro_broadcast_v1';
+
+/* DOM - Timer/Main */
+const timeDisplay = document.getElementById('timeDisplay');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const resetBtn = document.getElementById('resetBtn');
+const status = document.getElementById('status');
+const workModeBtn = document.getElementById('workMode');
+const shortModeBtn = document.getElementById('shortMode');
+const longModeBtn = document.getElementById('longMode');
+const workInput = document.getElementById('workInput');
+const shortInput = document.getElementById('shortInput');
+const longInput = document.getElementById('longInput');
+const cyclesInput = document.getElementById('cyclesInput');
+const openMiniWindowBtn = document.getElementById('openMiniWindowBtn');
+const closeMiniWindowBtn = document.getElementById('closeMiniWindowBtn');
+
+/* DOM - Tasks */
+const taskListEl = document.getElementById('taskList');
+const addTaskBtn = document.getElementById('addTaskBtn');
+const newTaskTitle = document.getElementById('newTaskTitle');
+const newTaskPom = document.getElementById('newTaskPom');
+const clearCompletedBtn = document.getElementById('clearCompleted');
+const exportTasksBtn = document.getElementById('exportTasks');
+const selectedTaskLabel = document.getElementById('selectedTaskLabel');
+const taskTitleEl = document.getElementById('taskTitle');
+const taskCountsEl = document.getElementById('taskCounts');
+const taskProgressBar = document.getElementById('taskProgress');
+const taskProgressWrap = document.getElementById('taskProgressWrap');
+const taskNotesInput = document.getElementById('taskNotes');
+const addSubBtn = document.getElementById('addSubBtn');
+const addSubTitle = document.getElementById('addSubTitle');
+const subtaskListEl = document.getElementById('subtaskList');
+const assignPomBtn = document.getElementById('assignPomBtn');
+const markDoneBtn = document.getElementById('markDoneBtn');
+const deleteTaskBtn = document.getElementById('deleteTaskBtn');
+
+/* DOM - Mini */
+const miniPlayer = document.getElementById('miniPlayer');
+const miniToggle = document.getElementById('miniToggle');
+const miniMode = document.getElementById('miniMode');
+const miniTime = document.getElementById('miniTime');
+const miniTask = document.getElementById('miniTask');
+const miniPlay = document.getElementById('miniPlay');
+const miniPause = document.getElementById('miniPause');
+const miniPrev = document.getElementById('miniPrev');
+const progressCircle = document.getElementById('progressCircle');
+const miniCenter = document.getElementById('miniCenter');
+const miniLeft = document.getElementById('miniLeft');
+const miniControls = document.getElementById('miniControls');
+
+/* Timer state */
+let timer = null;
+let remaining = 25 * 60; // seconds
+let running = false;
+let currentMode = 'work';
+let completedCycles = 0;
+
+/* Tasks state */
+let tasks = [];
+let selectedTaskId = null;
+
+/* Mini window handle */
+let miniWindow = null;
+
+/* Broadcast channel (for syncing between tabs/windows) */
+let bc = null;
+const hasBroadcast = typeof BroadcastChannel !== 'undefined';
+if(hasBroadcast){
+  try { bc = new BroadcastChannel('pomodoro_channel'); bc.onmessage = handleBroadcast; } catch(e){ bc=null; }
+} else {
+  // fallback: listen to localStorage events
+  window.addEventListener('storage', (e)=> {
+    if(e.key === BROADCAST_KEY) {
+      try { const msg = JSON.parse(e.newValue); handleBroadcast({ data: msg }); } catch(e){}
+    }
+  });
+}
+
+/* HELPERS: Storage / Settings */
+function saveSettings(){
+  const s = {
+    work: Number(workInput.value) || 25,
+    short: Number(shortInput.value) || 5,
+    long: Number(longInput.value) || 15,
+    cycles: Number(cyclesInput.value) || 4
+  };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  broadcastState();
+}
+function loadSettings(){
+  const d = localStorage.getItem(SETTINGS_KEY);
+  if(d) {
+    try{
+      const s = JSON.parse(d);
+      workInput.value = s.work;
+      shortInput.value = s.short;
+      longInput.value = s.long;
+      cyclesInput.value = s.cycles;
+    }catch(e){}
+  }
+}
+function durations(){
+  return {
+    work: (Number(workInput.value) || 25) * 60,
+    short: (Number(shortInput.value) || 5) * 60,
+    long: (Number(longInput.value) || 15) * 60,
+    cycles: (Number(cyclesInput.value) || 4)
+  };
+}
+function uid(){ return 't'+Date.now() + Math.floor(Math.random()*999); }
+
+/* TASKS CRUD */
+function loadTasks(){
+  const s = localStorage.getItem(TASKS_KEY);
+  if(s) {
+    try { tasks = JSON.parse(s); } catch(e){ tasks = []; }
+  } else tasks = [];
+}
+function saveTasks(){ localStorage.setItem(TASKS_KEY, JSON.stringify(tasks)); broadcastState(); }
+function renderTasks(){
+  taskListEl.innerHTML = '';
+  if(tasks.length === 0){
+    taskListEl.innerHTML = `<div class="tiny" style="color:var(--muted)">No tasks yet — add one above</div>`;
+    updateSelectedTaskUI();
+    return;
+  }
+  tasks.forEach(t => {
+    const div = document.createElement('div');
+    div.className = 'task-item' + (t.id === selectedTaskId ? ' selected' : '');
+    div.setAttribute('data-id', t.id);
+
+    const left = document.createElement('div'); left.style.flex='1';
+    left.innerHTML = `<div style="font-weight:600">${escapeHtml(t.title)}</div><small>${t.completedPomodoros}/${t.targetPomodoros} pomodoros</small>`;
+
+    const right = document.createElement('div'); right.className = 'task-controls';
+    const deleteBtn = document.createElement('button'); deleteBtn.className='btn ghost'; deleteBtn.textContent='✕';
+    deleteBtn.addEventListener('click', (e)=>{ e.stopPropagation(); if(confirm('Delete task?')) removeTask(t.id); });
+
+    div.appendChild(left); right.appendChild(deleteBtn); div.appendChild(right);
+    div.addEventListener('click', ()=> selectTask(t.id));
+    taskListEl.appendChild(div);
+  });
+  updateSelectedTaskUI();
+}
+function addTask(title, target){
+  const t = { id: uid(), title: title || 'Untitled', notes: '', targetPomodoros: Number(target) || 1, completedPomodoros: 0, subtasks: [] };
+  tasks.unshift(t); saveTasks(); renderTasks(); selectTask(t.id);
+}
+function removeTask(id){ tasks = tasks.filter(x=>x.id !== id); if(selectedTaskId === id) selectedTaskId = null; saveTasks(); renderTasks(); }
+function clearCompleted(){ if(!confirm('Remove all tasks that are completed (completedPomodoros >= target)?')) return; tasks = tasks.filter(t => t.completedPomodoros < t.targetPomodoros); if(selectedTaskId && !tasks.find(t=>t.id===selectedTaskId)) selectedTaskId=null; saveTasks(); renderTasks(); }
+function exportTasks(){ const data = JSON.stringify(tasks, null, 2); const blob = new Blob([data], {type:'application/json'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='pomodoro_tasks.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+function selectTask(id){ selectedTaskId = id; renderTasks(); updateSelectedTaskUI(); broadcastState(); }
+function updateSelectedTaskUI(){
+  const t = tasks.find(x=>x.id === selectedTaskId);
+  if(!t){
+    taskTitleEl.textContent = 'Select a task'; selectedTaskLabel.textContent = 'No task selected'; taskProgressWrap.style.display = 'none';
+    taskNotesInput.value = ''; subtaskListEl.innerHTML = `<div class="tiny" style="color:var(--muted)">No task selected</div>`;
+    document.getElementById('deleteTaskBtn').disabled = true; miniTask.textContent = 'No task selected';
+    return;
+  }
+  taskTitleEl.textContent = t.title; selectedTaskLabel.textContent = `Selected: ${t.title}`; taskNotesInput.value = t.notes || '';
+  taskCountsEl.textContent = `${t.completedPomodoros} / ${t.targetPomodoros} pomodoros`;
+  const pct = Math.min(100, Math.round(100 * (t.completedPomodoros / Math.max(1, t.targetPomodoros))));
+  taskProgressBar.style.width = pct + '%'; taskProgressWrap.style.display = 'block'; document.getElementById('deleteTaskBtn').disabled=false;
+  renderSubtasks(t); document.getElementById('taskMeta').textContent = t.subtasks.length + ' subtasks'; miniTask.textContent = t.title;
+}
+function renderSubtasks(task){ subtaskListEl.innerHTML=''; if(!task.subtasks || task.subtasks.length===0){ subtaskListEl.innerHTML = `<div class="tiny" style="color:var(--muted)">No subtasks</div>`; return; } task.subtasks.forEach(s=>{ const di=document.createElement('div'); di.className='subtask'+(s.done?' done':''); di.innerHTML=`<input type="checkbox" ${s.done?'checked':''} data-id="${s.id}"> <div style="flex:1">${escapeHtml(s.title)}</div> <button class="btn ghost" data-id="${s.id}">Delete</button>`; di.querySelector('input[type="checkbox"]').addEventListener('change',(e)=>{toggleSubtaskDone(task.id,e.target.getAttribute('data-id'), e.target.checked)}); di.querySelector('button').addEventListener('click',(e)=>{removeSubtask(task.id,e.target.getAttribute('data-id'))}); subtaskListEl.appendChild(di); }); }
+function addSubtask(taskId,title){ const t = tasks.find(x=>x.id===taskId); if(!t) return; t.subtasks.push({id: uid(), title: title || 'Subtask', done:false}); saveTasks(); updateSelectedTaskUI(); }
+function removeSubtask(taskId, subId){ const t = tasks.find(x=>x.id===taskId); if(!t) return; t.subtasks = t.subtasks.filter(s=>s.id!==subId); saveTasks(); updateSelectedTaskUI(); }
+function toggleSubtaskDone(taskId, subId, done){ const t = tasks.find(x=>x.id===taskId); if(!t) return; const s = t.subtasks.find(ss=>ss.id===subId); if(!s) return; s.done = !!done; saveTasks(); updateSelectedTaskUI(); }
+function assignPomodoroToTask(taskId, count=1){ const t = tasks.find(x=>x.id===taskId); if(!t) return; t.completedPomodoros = Math.min(t.targetPomodoros, t.completedPomodoros + Number(count)); saveTasks(); updateSelectedTaskUI(); broadcastState(); }
+function markTaskDone(taskId){ const t = tasks.find(x=>x.id===taskId); if(!t) return; t.completedPomodoros = t.targetPomodoros; saveTasks(); updateSelectedTaskUI(); broadcastState(); }
+function deleteSelectedTask(){ if(!selectedTaskId) return; if(confirm('Delete selected task?')) removeTask(selectedTaskId); }
+function escapeHtml(text){ return String(text).replace(/[&<>"']/g, (m)=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }
+
+/* TIMER LOGIC */
+function setMode(mode, resetTimer=true){
+  currentMode = mode; [workModeBtn, shortModeBtn, longModeBtn].forEach(b=>b.classList.remove('active'));
+  if(mode==='work') workModeBtn.classList.add('active'); if(mode==='short') shortModeBtn.classList.add('active'); if(mode==='long') longModeBtn.classList.add('active');
+  if(resetTimer){ const d = durations(); remaining = {work:d.work, short:d.short, long:d.long}[mode]; updateDisplay(); }
+  updateStatus(); updateMini();
+  broadcastState();
+}
+function updateDisplay(){ const m=Math.floor(remaining/60); const s=remaining%60; timeDisplay.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; miniTime.textContent = timeDisplay.textContent; updateProgressRing(); }
+function updateStatus(){ const modeLabel = currentMode==='work' ? 'Work' : (currentMode==='short'? 'Short Break' : 'Long Break'); status.textContent = (running ? 'Running — ' : 'Ready — ') + modeLabel + ' • ' + formatMinutes(remaining); miniMode.textContent = modeLabel; }
+function formatMinutes(seconds){ return `${Math.round(seconds/60)} min`; }
+function tick(){ if(remaining>0){ remaining--; updateDisplay(); } else { onSessionEnd(); } }
+function playBeep(){ try{ if(!window.__audio__) window.__audio__ = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA="); window.__audio__.currentTime=0; window.__audio__.play().catch(()=>{}); }catch(e){} }
+function notify(text){ if("Notification" in window && Notification.permission==='granted'){ new Notification("Pomodoro", { body:text }); } else if("Notification" in window && Notification.permission!=='denied'){ Notification.requestPermission().then(p=>{ if(p==='granted') new Notification("Pomodoro",{body:text}); }); } else { console.log('Notification:', text); } }
+function onSessionEnd(){
+  playBeep(); notify(currentMode==='work' ? 'Work session finished':'Break finished');
+  if(currentMode==='work'){
+    completedCycles++;
+    if(selectedTaskId) assignPomodoroToTask(selectedTaskId,1);
+    if(completedCycles % durations().cycles === 0) setMode('long'); else setMode('short');
+  } else {
+    setMode('work');
+  }
+  stopTimer(); broadcastState();
+}
+function startTimer(){ if(running) return; running=true; startBtn.textContent='Running'; startBtn.disabled=true; pauseBtn.disabled=false; miniPlay.textContent='Running'; miniPlay.disabled=true; miniPause.disabled=false; timer=setInterval(tick,1000); updateStatus(); broadcastState(); }
+function stopTimer(){ if(timer) clearInterval(timer); timer=null; running=false; startBtn.textContent='Start'; startBtn.disabled=false; pauseBtn.disabled=true; miniPlay.textContent='Start'; miniPlay.disabled=false; miniPause.disabled=true; updateStatus(); broadcastState(); }
+function pauseTimer(){ if(timer) clearInterval(timer); timer=null; running=false; startBtn.textContent='Resume'; startBtn.disabled=false; pauseBtn.disabled=true; miniPlay.textContent='Resume'; miniPlay.disabled=false; miniPause.disabled=true; updateStatus(); broadcastState(); }
+function resetTimer(){ stopTimer(); completedCycles=0; setMode('work', true); saveSettings(); broadcastState(); }
+
+/* Update progress ring */
+const RADIUS = 24;
+const CIRC = 2 * Math.PI * RADIUS; // circumference
+progressCircle.setAttribute('stroke-dasharray', String(CIRC));
+function updateProgressRing(){
+  const total = { work: durations().work, short: durations().short, long: durations().long }[currentMode];
+  const pct = total > 0 ? (1 - remaining / total) : 0;
+  const dash = CIRC * (1 - pct);
+  progressCircle.style.strokeDashoffset = String(dash);
+  miniCenter.textContent = `${Math.ceil(remaining/60)}m`;
+}
+
+/* MINI behavior: update mini UI */
+function updateMini(){
+  miniMode.textContent = currentMode==='work'?'Work':(currentMode==='short'?'Short Break':'Long Break');
+  const m = Math.floor(remaining/60); const s=remaining%60;
+  miniTime.textContent = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  const t = tasks.find(x=>x.id===selectedTaskId);
+  miniTask.textContent = t ? t.title : 'No task selected';
+  updateProgressRing();
+}
+
+/* Broadcast and sync between windows/tabs */
+function broadcastState(){
+  const payload = {
+    type: 'state',
+    data: {
+      remaining, running, currentMode, completedCycles, selectedTaskId, tasks, timestamp: Date.now()
+    }
+  };
+  try{
+    if(bc) bc.postMessage(payload);
+    else localStorage.setItem(BROADCAST_KEY, JSON.stringify(payload));
+  }catch(e){}
+}
+function handleBroadcast(evt){
+  const msg = evt.data;
+  if(!msg || msg.type!=='state') return;
+  const s = msg.data || {};
+  // merge: use incoming state if it's newer
+  // simple approach: accept incoming always (keeps windows consistent)
+  remaining = typeof s.remaining === 'number' ? s.remaining : remaining;
+  running = !!s.running;
+  currentMode = s.currentMode || currentMode;
+  completedCycles = typeof s.completedCycles === 'number' ? s.completedCycles : completedCycles;
+  selectedTaskId = s.selectedTaskId || selectedTaskId;
+  if(Array.isArray(s.tasks)) tasks = s.tasks;
+  // make sure UI reflects
+  updateDisplay(); updateStatus(); renderTasks(); updateMini();
+  // start/stop timer according to running
+  if(running && !timer) { timer = setInterval(tick, 1000); }
+  if(!running && timer) { clearInterval(timer); timer=null; }
+}
+
+/* MINI window open/close (popup) */
+function openMiniWindow(){
+  try{
+    if(miniWindow && !miniWindow.closed){ miniWindow.focus(); return; }
+    const w = 360, h=180;
+    miniWindow = window.open(window.location.href + '?mini=1', 'pomodoro_mini', `width=${w},height=${h},resizable=yes`);
+    // some browsers block window.open; user must allow popup
+    if(miniWindow) {
+      openMiniWindowBtn.style.display='none';
+      closeMiniWindowBtn.style.display='inline-block';
+    }
+  }catch(e){ alert('Popup blocked — allow popups for this site to open the mini window.'); }
+}
+function closeMiniWindow(){
+  if(miniWindow && !miniWindow.closed) miniWindow.close();
+  miniWindow = null;
+  openMiniWindowBtn.style.display='inline-block';
+  closeMiniWindowBtn.style.display='none';
+}
+
+/* Make mini-player draggable (mouse + touch) */
+(function makeDraggable(el){
+  let isDown=false, startX=0, startY=0, origX=0, origY=0;
+  el.addEventListener('mousedown', startDrag);
+  el.addEventListener('touchstart', startDrag, {passive:false});
+  function startDrag(e){
+    // don't start drag if clicking control buttons
+    const tag = e.target.tagName.toLowerCase();
+    if(tag==='button' || e.target.closest('.mini-controls')) return;
+    isDown = true;
+    el.style.transition = 'none';
+    const p = getEventPos(e);
+    startX = p.x; startY = p.y;
+    const rect = el.getBoundingClientRect();
+    origX = rect.left; origY = rect.top;
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchmove', move, {passive:false});
+    document.addEventListener('touchend', endDrag);
+  }
+  function move(e){
+    if(!isDown) return;
+    e.preventDefault();
+    const p = getEventPos(e);
+    const dx = p.x - startX, dy = p.y - startY;
+    let nx = origX + dx, ny = origY + dy;
+    // clamp to viewport
+    const vw = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
+    const vh = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+    const rect = el.getBoundingClientRect();
+    nx = Math.max(8, Math.min(vw - rect.width - 8, nx));
+    ny = Math.max(8, Math.min(vh - rect.height - 8, ny));
+    el.style.left = nx + 'px'; el.style.top = ny + 'px'; el.style.right='auto'; el.style.bottom='auto'; el.style.position='fixed';
+  }
+  function endDrag(){
+    isDown=false; el.style.transition='';
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', endDrag);
+    document.removeEventListener('touchmove', move);
+    document.removeEventListener('touchend', endDrag);
+    // persist position
+    const rect = el.getBoundingClientRect(); localStorage.setItem('mini_pos', JSON.stringify({left: rect.left, top: rect.top}));
+  }
+  function getEventPos(e){ if(e.touches && e.touches[0]) return {x:e.touches[0].clientX, y:e.touches[0].clientY}; return {x:e.clientX, y:e.clientY}; }
+})(miniPlayer);
+
+/* Restore mini position */
+(function restoreMiniPos(){
+  try{
+    const pos = JSON.parse(localStorage.getItem('mini_pos') || 'null');
+    if(pos && typeof pos.left==='number' && typeof pos.top==='number'){
+      miniPlayer.style.left = pos.left + 'px'; miniPlayer.style.top = pos.top + 'px'; miniPlayer.style.position='fixed';
+    }
+  }catch(e){}
+})();
+
+/* collapse/expand mini */
+let collapsed=false;
+miniToggle.addEventListener('click',(e)=>{ e.stopPropagation(); collapsed = !collapsed; miniPlayer.classList.toggle('collapsed', collapsed); miniToggle.textContent = collapsed ? '+' : '—'; // hide extras
+  if(collapsed){ miniLeft.style.display='none'; miniControls.style.display='none'; progressCircle.style.display='none'; miniPlayer.style.width='64px'; miniPlayer.style.height='64px'; } else { miniLeft.style.display='flex'; miniControls.style.display='flex'; progressCircle.style.display='block'; miniPlayer.style.width='260px'; miniPlayer.style.height='auto'; } });
+
+/* mini control events */
+miniPlay.addEventListener('click',(e)=>{ e.stopPropagation(); if(!running) startTimer(); });
+miniPause.addEventListener('click',(e)=>{ e.stopPropagation(); if(running) pauseTimer(); });
+miniPrev.addEventListener('click',(e)=>{ e.stopPropagation(); if(confirm('Reset timer for current mode?')){ const d=durations(); remaining = {work:d.work, short:d.short, long:d.long}[currentMode]; updateDisplay(); updateMini(); broadcastState(); } });
+
+/* map main controls to broadcast */
+startBtn.addEventListener('click', startTimer);
+pauseBtn.addEventListener('click', pauseTimer);
+resetBtn.addEventListener('click', ()=>{ if(confirm('Reset timer and cycles?')) resetTimer(); });
+
+workModeBtn.addEventListener('click', ()=>{ setMode('work'); stopTimer(); });
+shortModeBtn.addEventListener('click', ()=>{ setMode('short'); stopTimer(); });
+longModeBtn.addEventListener('click', ()=>{ setMode('long'); stopTimer(); });
+
+[workInput, shortInput, longInput, cyclesInput].forEach(inp=>{
+  inp.addEventListener('change', ()=>{
+    saveSettings();
+    const d = durations();
+    if(currentMode==='work') remaining = d.work;
+    if(currentMode==='short') remaining = d.short;
+    if(currentMode==='long') remaining = d.long;
+    updateDisplay(); updateStatus(); updateMini(); broadcastState();
+  });
+});
+
+/* TASK events */
+addTaskBtn.addEventListener('click', ()=>{ const title=newTaskTitle.value.trim(); const pom = Number(newTaskPom.value) || 1; if(!title){ alert('Enter a task title'); return; } addTask(title,pom); newTaskTitle.value=''; newTaskPom.value=1; });
+newTaskTitle.addEventListener('keypress',(e)=>{ if(e.key==='Enter') addTaskBtn.click(); });
+clearCompletedBtn.addEventListener('click', clearCompleted);
+exportTasksBtn.addEventListener('click', exportTasks);
+taskNotesInput.addEventListener('change', ()=>{ const t = tasks.find(x=>x.id===selectedTaskId); if(!t) return; t.notes = taskNotesInput.value; saveTasks(); });
+addSubBtn.addEventListener('click', ()=>{ const txt = addSubTitle.value.trim(); if(!txt){ alert('Enter a subtask title'); return; } addSubtask(selectedTaskId, txt); addSubTitle.value = ''; });
+addSubTitle.addEventListener('keypress',(e)=>{ if(e.key==='Enter') addSubBtn.click(); });
+assignPomBtn.addEventListener('click', ()=>{ if(!selectedTaskId){ alert('Select a task first'); return; } assignPomodoroToTask(selectedTaskId,1); alert('Assigned 1 pomodoro to selected task'); });
+markDoneBtn.addEventListener('click', ()=>{ if(!selectedTaskId) return; if(!confirm('Mark this task as done?')) return; markTaskDone(selectedTaskId); });
+deleteTaskBtn.addEventListener('click', deleteSelectedTask);
+
+/* open/close mini window buttons */
+openMiniWindowBtn.addEventListener('click', openMiniWindow);
+closeMiniWindowBtn.addEventListener('click', closeMiniWindow);
+
+/* init */
+(function init(){
+  loadSettings(); loadTasks(); setMode('work', true); updateDisplay(); updateStatus(); renderTasks(); updateMini();
+  if("Notification" in window && Notification.permission === 'default'){ setTimeout(()=> Notification.requestPermission().catch(()=>{}), 900); }
+  // if this instance was opened as '?mini=1', render only the mini UI (useful for popup)
+  if(location.search && location.search.indexOf('mini=1')!==-1){
+    // keep minimal UI: hide main app
+    document.querySelector('.app').style.display = 'none';
+    // ensure mini fills window nicely
+    miniPlayer.style.left='auto'; miniPlayer.style.right='8px'; miniPlayer.style.top='8px'; miniPlayer.style.bottom='8px';
+    miniPlayer.style.position='fixed';
+    // expose close-on-unload to parent
+    window.addEventListener('beforeunload', ()=>{ try{ localStorage.setItem('mini_closed', Date.now().toString()); }catch(e){} });
+  }
+})();
+</script>
+</body>
+</html>
